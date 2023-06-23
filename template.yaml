@@ -1,0 +1,241 @@
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  monthlySchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      ScheduleExpression: cron(0 8 1 * ? *)
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpressionTimezone: Asia/Singapore
+      Target:
+        Arn: !Ref monthlyUserPermissionAssessment
+        RoleArn: !GetAtt monthlyScheduleTomonthlyUserPermissionAssessmentRole.Arn
+  fullPermissionSetsWithGroupTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: permissionSetArn
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: permissionSetArn
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  usersWithGroupTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+  notificationEmail:
+    Type: AWS::SNS::Topic
+    Properties:
+      KmsMasterKeyId: alias/aws/sns
+  dataExtractionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: dataExtractionFunction
+      CodeUri: src/dataExtractionFunction
+      Handler: handler.handler
+      Runtime: python3.9
+      MemorySize: 6008
+      Timeout: 120
+      Tracing: Active
+      Environment:
+        Variables:
+          PERMISSION_TABLE_NAME: !Ref fullPermissionSetsWithGroupTable
+          PERMISSION_TABLE_ARN: !GetAtt fullPermissionSetsWithGroupTable.Arn
+          USER_TABLE_NAME: !Ref usersWithGroupTable
+          USER_TABLE_ARN: !GetAtt usersWithGroupTable.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref fullPermissionSetsWithGroupTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref usersWithGroupTable
+        - IAMReadOnlyAccess
+        - AWSSSOReadOnly
+        - Statement:
+            - Sid: IdentityStoreReadOnlyAccessPolicy
+              Effect: Allow
+              Action:
+                - identitystore:DescribeUser
+                - identitystore:IsMemberInGroups
+                - identitystore:ListGroupMemberships
+                - identitystore:DescribeGroupMembership
+                - identitystore:GetGroupMembershipId
+                - identitystore:ListUsers
+                - identitystore:DescribeGroup
+                - identitystore:ListGroups
+                - identitystore:ListGroupMembershipsForMember
+                - identitystore:GetGroupId
+                - identitystore:GetUserId
+              Resource: '*'
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:770693421928:layer:Klayers-p39-boto3:9
+  dataExtractionFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${dataExtractionFunction}
+  dataTransformLoadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: dataTransformLoadFunction
+      CodeUri: src/dataTransformLoadFunction
+      Handler: handler.handler
+      Runtime: python3.9
+      MemorySize: 3008
+      Timeout: 30
+      Tracing: Active
+      Environment:
+        Variables:
+          TOPIC_NAME: !GetAtt notificationEmail.TopicName
+          TOPIC_ARN: !Ref notificationEmail
+          USER_TABLE_NAME: !Ref usersWithGroupTable
+          USER_TABLE_ARN: !GetAtt usersWithGroupTable.Arn
+          PERMISSION_TABLE_NAME: !Ref fullPermissionSetsWithGroupTable
+          PERMISSION_TABLE_ARN: !GetAtt fullPermissionSetsWithGroupTable.Arn
+          BUCKET_NAME: !Ref monthlyReportBucket
+          BUCKET_ARN: !GetAtt monthlyReportBucket.Arn
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt notificationEmail.TopicName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref usersWithGroupTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref fullPermissionSetsWithGroupTable
+        - S3CrudPolicy:
+            BucketName: !Ref monthlyReportBucket
+  dataTransformLoadFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${dataTransformLoadFunction}
+  monthlyUserPermissionAssessment:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Definition:
+        StartAt: Start
+        States:
+          Start:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke
+            Next: AssessmentTask
+            Parameters:
+              FunctionName: ${dataExtractionFunctionArn}
+              Payload.$: $
+          AssessmentTask:
+            Type: Task
+            Next: Done
+            Resource: arn:aws:states:::lambda:invoke
+            Parameters:
+              FunctionName: ${dataTransformLoadFunctionArn}
+              Payload.$: $
+          Done:
+            Type: Pass
+            End: true
+      Logging:
+        Level: ALL
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt monthlyUserPermissionAssessmentLogGroup.Arn
+      Policies:
+        - AWSXrayWriteOnlyAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogDelivery
+                - logs:GetLogDelivery
+                - logs:UpdateLogDelivery
+                - logs:DeleteLogDelivery
+                - logs:ListLogDeliveries
+                - logs:PutResourcePolicy
+                - logs:DescribeResourcePolicies
+                - logs:DescribeLogGroups
+              Resource: '*'
+        - LambdaInvokePolicy:
+            FunctionName: !Ref dataExtractionFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref dataTransformLoadFunction
+      Tracing:
+        Enabled: true
+      Type: STANDARD
+      DefinitionSubstitutions:
+        dataExtractionFunctionArn: !GetAtt dataExtractionFunction.Arn
+        dataTransformLoadFunctionArn: !GetAtt dataTransformLoadFunction.Arn
+  monthlyUserPermissionAssessmentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub
+        - /aws/vendedlogs/states/${AWS::StackName}-${ResourceId}-Logs
+        - ResourceId: monthlyUserPermissionAssessment
+  monthlyScheduleTomonthlyUserPermissionAssessmentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Effect: Allow
+          Principal:
+            Service: !Sub scheduler.${AWS::URLSuffix}
+          Action: sts:AssumeRole
+          Condition:
+            ArnLike:
+              aws:SourceArn: !Sub
+                - arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/*/${AWS::StackName}-${ResourceId}-*
+                - ResourceId: monthlySchedule
+      Policies:
+        - PolicyName: StartExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref monthlyUserPermissionAssessment
+  monthlyReportBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-monthlyre-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: alias/aws/s3
+      PublicAccessBlockConfiguration:
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+  monthlyReportBucketBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref monthlyReportBucket
+      PolicyDocument:
+        Id: RequireEncryptionInTransit
+        Version: '2012-10-17'
+        Statement:
+          - Principal: '*'
+            Action: '*'
+            Effect: Deny
+            Resource:
+              - !GetAtt monthlyReportBucket.Arn
+              - !Sub ${monthlyReportBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
