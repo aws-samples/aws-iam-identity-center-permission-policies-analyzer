@@ -121,12 +121,26 @@ def handler(event, context):
                 'permissionsBoundary': permissions_boundary_response['PermissionsBoundary']
             })
 
+    # Get list of users in Identity Store
     user_list_response = identitystore.list_users(
         IdentityStoreId=IDENTITY_STORE_ID
     )
     
+    user_list = user_list_response.get('Users')
+    
+    # if total number of users exceed the size of one page
+    while 'NextToken' in user_list_response:
+        user_list_response = identitystore.list_users(
+        IdentityStoreId=IDENTITY_STORE_ID,
+        NextToken=user_list_response['NextToken']
+        )
+        # Store paginated results into a list
+        for user in user_list_response.get('Users'):
+            user_list.append(user)
+
+    
     # loop through user lists to get the membership details (user Id, group ID in GroupMemberships details, user names etc)
-    for user in user_list_response.get('Users'):
+    for user in user_list:
         # get member group (groupId) details
         user_group_membership_response = identitystore.list_group_memberships_for_member(
             IdentityStoreId=IDENTITY_STORE_ID,

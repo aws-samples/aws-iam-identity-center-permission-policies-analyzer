@@ -31,7 +31,7 @@ In your own AWS environment, make sure that you have the following set up:
 1. Make sure that you have AWS SAM CLI installed. Otherwise, please [follow the steps here to install](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) the AWS SAM CLI.
 2. Clone a copy of this repo. You can either deploy this by using CloudFormation or AWS SAM. The two Lambda Function source codes are in the `src` folder.
 3. `cd aws-iam-identity-center-permission-policies-analyzer`
-4. `sam deploy --guided` and follow the step-by-step instructions to indicate the deployment details such as desired CloudFormation stack name, regions and etc. For example:
+4. `sam deploy --guided` and follow the step-by-step instructions to indicate the deployment details such as desired CloudFormation stack name, regions and other details. For example:
 
 ![sample-sam-deploy](/static/images/sample-sam-deploy.jpg)
 
@@ -47,8 +47,17 @@ The default specification for the Amazon EventBridge Schedule is configured with
 
 ![eventbridge-schedule-pattern](static/images/eventbridge-schedule-pattern.jpg)
 
-### Update the event pattern
-5. At Step 2 in the EventBridge schedule page, scroll down to the `StartExecution` segment. In the 'Input' box, use the following format to update the pattern. Replace the placeholder values with your account details, and `YOUR_SSO_DEPLOYED_REGION` with the region in which you have deployed your AWS IAM Identity Center. Click “Next” and update the retry policy if preferred, and click on ”Save schedule“ at the last step once you are done.
+
+### Confirm SNS topic subscription for email notifications
+Check the email address you entered during the deployment stage of this solution for an email sent by no-reply@sns.amazonaws.com. Follow the steps in the email to confirm the Amazon SNS topic subscription. 
+
+![sns-create-subscription-4](static/images/sns-create-subscription-4.jpg)
+![sns-create-subscription-5](static/images/sns-create-subscription-5.jpg)
+
+### (Optional) Manually triggering the review for the first time or on as-needed basis
+After you have updated the schedule above, the review process will run on the specified timing and frequency. You might want to trigger for the first time after you have deployed the solution, or anytime on as-needed basis outside of the scheduled window. 
+
+To do so, head to [Step Functions console](https://console.aws.amazon.com/states/home?#/statemachines), select the State machine `monthlyUserPermissionAssessment-{randomID}` and click the “Start Execution” button. Input the following event pattern and click “Start Execution".
 
 ```
 {
@@ -57,28 +66,8 @@ The default specification for the Amazon EventBridge Schedule is configured with
   "ssoDeployedRegion": "YOUR_SSO_DEPLOYED_REGION" (example: us-east-1)
 }
 ```
-**_NOTE:_** The format and keyword format is important to execute the Lambda function successfully:
+**_NOTE:_** The format and keyword format is important to execute the Lambda function successfully: 
 
-![eventbridge-execution-pattern](static/images/eventbridge-execution-pattern.jpg)
-
-6. Lastly, create the necessary subscription for the stakeholders you want to notify after each review is completed. Go to [SNS Console](https://console.aws.amazon.com/sns/v3/home#/topics), select the SNS topic that has been created with the CloudFormation template (`{StackName}-notificationEmail-{RandomID}`)
-
-![sns-create-subscription](static/images/sns-create-subscription.jpg)
-![sns-create-subscription-2](static/images/sns-create-subscription-2.jpg)
-
-7. Select your preferred protocol (In this example, we will use Email). Input your email alias or team email alias, and click “Create Subscription”.
-
-![sns-create-subscription-3](static/images/sns-create-subscription-3.jpg)
-
-After that, click ‘Request confirmation’ and follow the steps received via the email sent by `no-reply@sns.amazonaws.com` to confirm the subscription. You will be directed to the subscription confirmation page once you have clicked confirm subscription from the email.
-
-![sns-create-subscription-4](static/images/sns-create-subscription-4.jpg)
-![sns-create-subscription-5](static/images/sns-create-subscription-5.jpg)
-
-### (Optional) Triggering the review for the first time or on ad hoc basis
-After you have updated the schedule above, the review process will run on the specified timing and frequency. You might want to trigger for the first time after you have deployed the solution, or anytime on ad hoc basis outside of the scheduled window. 
-
-To do so, head to [Step Functions console](https://console.aws.amazon.com/states/home?#/statemachines), select the State machine `monthlyUserPermissionAssessment-{randomID}` and click the “Start Execution” button. Input the same copy of the event pattern that you have just updated in Eventbridge scheduler in the previous step and click “Start Execution again”.
 ![stepfunction-start-execution](static/images/stepfunction-start-execution.jpg)
 ![stepfunction-start-execution-2](static/images/stepfunction-start-execution-2.jpg)
 
@@ -89,12 +78,10 @@ Once the execution starts, you will arrive at the execution page and able to che
 
 
 ### Notification from each successful review
-After each successful execution, you should receive an email notification with the email subscribed in the SNS topic. You can then retrieve the report from the S3 bucket according to the object key name specified in the email. An example of the email notification is as below:
+After each successful execution, you should receive an email notification. You can then retrieve the report from the S3 bucket according to the object key name specified in the email. An example of the email notification is as below:
 
 ![report-email](static/images/report-email.jpg)
 
-Example of the report(s) shown in the S3 bucket:
-![s3-bucket-report](static/images/s3-bucket-report.jpg)
 
 csv report details:
 | User | PrincipalId | PrincipalType | GroupName | AccountIdAssignment | PermissionSetARN | PermissionSetName | Inline Policy | Customer Managed Policy | AWS Managed Policy | Permission Boundary |
