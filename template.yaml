@@ -13,6 +13,7 @@ Resources:
   monthlySchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
+      GroupName: !Ref monthlyScheduleGroup
       ScheduleExpression: cron(0 8 1 * ? *)
       FlexibleTimeWindow:
         Mode: 'OFF'
@@ -27,6 +28,8 @@ Resources:
               "instanceArn": "${IdentityStoreInstanceArn}",
               "ssoDeployedRegion": "${AWS::Region}" 
             }
+  monthlyScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
   fullPermissionSetsWithGroupTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -224,9 +227,8 @@ Resources:
           Action: sts:AssumeRole
           Condition:
             ArnLike:
-              aws:SourceArn: !Sub
-                - arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/*/${AWS::StackName}-${ResourceId}-*
-                - ResourceId: monthlySchedule
+              aws:SourceArn: 
+                - !GetAtt monthlyScheduleGroup.Arn
       Policies:
         - PolicyName: StartExecutionPolicy
           PolicyDocument:
