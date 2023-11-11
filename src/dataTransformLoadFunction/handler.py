@@ -24,14 +24,30 @@ def query_ddb_to_populate_report(user_name, principal_id, group_name, principal_
             ':pid': principal_id
         }
         )
+    permission_response_list = permission_response.get('Items')
+    
+    # Paginate returning up to 1MB of data for each iteration
+    while 'LastEvaluatedKey' in permission_response:
+        permission_response = iam_permissions_table.query(
+        TableName=PERMISSION_TABLE,
+        KeyConditionExpression="id = :id",
+        FilterExpression= "contains(principalId, :pid)",
+        ExpressionAttributeValues={
+            ':id': instance_arn,
+            ':pid': principal_id
+        },
+        ExclusiveStartKey=permission_response['LastEvaluatedKey']
+        )
+        # Extend paginated results into the list
+        permission_response_list.extend(permission_response.get('Items'))
 
     print('Dynamodb query result for user:' + user_name + ', group name:'+ group_name)
-    print(permission_response)
+    print(permission_response_list)
 
-    if permission_response.get('Count') == 0:
+    if len(permission_response_list) == 0:
         writer.writerow([user_name, principal_id, principal_type, group_name, 'not_assigned'])
     else:
-        for permission in permission_response.get('Items'):
+        for permission in permission_response_list:
             print('Permissions for user:' + user_name + ', group name:'+ group_name)
             print(permission)
             
@@ -64,12 +80,22 @@ def handler(event, context):
     user_list_response = user_list_table.scan(
         TableName=USER_TABLE
         )
+    user_list_data = user_list_response.get('Items')
+    
+    # Paginate returning up to 1MB of data for each iteration
+    while 'LastEvaluatedKey' in user_list_response:
+        user_list_response = user_list_table.scan(
+            TableName=USER_TABLE,
+            ExclusiveStartKey=user_list_response['LastEvaluatedKey']
+            )
+        # Extend paginated results into the list
+        user_list_data.extend(user_list_response.get('Items'))
 
     with open('/tmp/' + curr_date + 'result.csv', 'w') as f:
         writer = csv.writer(f)
         writer.writerow(['User', 'PrincipalId', 'PrincipalType', 'GroupName', 'AccountIdAssignment', 'PermissionSetARN', 'PermissionSetName', 'Inline Policy', 'Customer Managed Policy','AWS Managed Policy', 'Permission Boundary'])
         
-        for user in user_list_response.get('Items'):
+        for user in user_list_data:
             print('extracting user data')
             print(user)
             user_id = user['userId']

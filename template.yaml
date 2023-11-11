@@ -81,7 +81,7 @@ Resources:
       Handler: handler.handler
       Runtime: python3.9
       MemorySize: 6008
-      Timeout: 120
+      Timeout: 600
       Tracing: Active
       Environment:
         Variables:
@@ -129,7 +129,7 @@ Resources:
       Handler: handler.handler
       Runtime: python3.9
       MemorySize: 3008
-      Timeout: 30
+      Timeout: 600
       Tracing: Active
       Environment:
         Variables:

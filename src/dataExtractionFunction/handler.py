@@ -28,17 +28,44 @@ def handler(event, context):
     )
     print(permission_sets_response)
     
+    permission_sets_list = permission_sets_response.get('PermissionSets')
+    
+    # if total number of permission sets exceed the size of one page
+    while 'NextToken' in permission_sets_response:
+        permission_sets_response = sso.list_permission_sets(
+            InstanceArn=INSTANCE_ARN,
+            NextToken=permission_sets_response['NextToken']
+            )
+        # Store paginated results into a list
+        for permission_set in permission_sets_response.get('PermissionSets'):
+            permission_sets_list.append(permission_set)
+    
+    print("number of permission sets to be analysed:", len(permission_sets_list))
     # loop through permission set to get list of group ID (to get sso group and users), policies, default versions (for json details)
-    for item in permission_sets_response.get('PermissionSets'):
+    for permission_set_arn in permission_sets_response.get('PermissionSets'):
+        print("currently analysing PermissionSet:", permission_set_arn)
         # get list of accounts associated with permission set
         assoc_acc_response = sso.list_accounts_for_provisioned_permission_set(
             InstanceArn=INSTANCE_ARN,
-            PermissionSetArn=item
+            PermissionSetArn=permission_set_arn
             )
+            
+        assoc_acc_list = assoc_acc_response.get('AccountIds')
+        
+        # if total number of associated accounts exceed the size of one page
+        while 'NextToken' in assoc_acc_response:
+            assoc_acc_response = sso.list_accounts_for_provisioned_permission_set(
+                InstanceArn=INSTANCE_ARN,
+                PermissionSetArn=permission_set_arn,
+                NextToken=assoc_acc_response['NextToken']
+                )
+            # Store paginated results into a list
+            for account in assoc_acc_response.get('AccountIds'):
+                assoc_acc_list.append(account)
         
         describe_permission_set_response = sso.describe_permission_set(
             InstanceArn=INSTANCE_ARN,
-            PermissionSetArn=item
+            PermissionSetArn=permission_set_arn
             )
 
         # Define array to store Principal ID, Account ID and Principal Type
@@ -46,24 +73,38 @@ def handler(event, context):
         account_list=[]
         principal_type_list=[]
         
-        for account in assoc_acc_response.get('AccountIds'):
+        for account in assoc_acc_list:
             # get the principal ID to link with the AWS IAM Identity Center group to get members
             account_assignments_response = sso.list_account_assignments(
                 InstanceArn=INSTANCE_ARN,
                 AccountId=account,
-                PermissionSetArn=item
+                PermissionSetArn=permission_set_arn
                 )
+                
+            identity_principal_assignee_list = account_assignments_response.get('AccountAssignments')
+                
+            # if total number of principal assigned exceed the size of one page
+            while 'NextToken' in account_assignments_response:
+                account_assignments_response = sso.list_account_assignments(
+                    InstanceArn=INSTANCE_ARN,
+                    AccountId=account,
+                    PermissionSetArn=permission_set_arn,
+                    NextToken=account_assignments_response['NextToken']
+                    )
+                # Store paginated results into a list
+                for principal_assignee in account_assignments_response.get('AccountAssignments'):
+                    identity_principal_assignee_list.append(account)
 
-            for group in account_assignments_response['AccountAssignments']:
+            for principal_assignee in identity_principal_assignee_list:
                 # build json
-                principal_id_list.append(group['PrincipalId'])
-                account_list.append(group['AccountId'])
-                principal_type_list.append(group['PrincipalType'])
+                principal_id_list.append(principal_assignee['PrincipalId'])
+                account_list.append(principal_assignee['AccountId'])
+                principal_type_list.append(principal_assignee['PrincipalType'])
                 
         # get the list of managed policies attached in each of the permission set
         managed_policies_response = sso.list_managed_policies_in_permission_set(
             InstanceArn=INSTANCE_ARN,
-            PermissionSetArn=item
+            PermissionSetArn=permission_set_arn
             )
                 
         managed_policies = []
@@ -82,13 +123,13 @@ def handler(event, context):
         # get the inline policy attached in each of the permission set
         inline_policies_response = sso.get_inline_policy_for_permission_set(
             InstanceArn=INSTANCE_ARN,
-            PermissionSetArn=item
+            PermissionSetArn=permission_set_arn
             )
 
         # get the list of customer managed policy references attached in each of the permission set
         customer_policies_response = sso.list_customer_managed_policy_references_in_permission_set(
             InstanceArn=INSTANCE_ARN,
-            PermissionSetArn=item
+            PermissionSetArn=permission_set_arn
             )
         # print(customer_policies_response)
 
@@ -96,7 +137,7 @@ def handler(event, context):
         try: 
             permissions_boundary_response = sso.get_permissions_boundary_for_permission_set(
                 InstanceArn=INSTANCE_ARN,
-                PermissionSetArn=item
+                PermissionSetArn=permission_set_arn
                 )
         except botocore.exceptions.ClientError as error:
             if error.response['Error']['Code'] == 'ResourceNotFoundException':
@@ -110,7 +151,7 @@ def handler(event, context):
             TableName=PERMISSION_TABLE,
             Item={
                 'id': INSTANCE_ARN,
-                'permissionSetArn': item,
+                'permissionSetArn': permission_set_arn,
                 'permissionSetName': describe_permission_set_response['PermissionSet']['Name'],
                 'principalId': principal_id_list,
                 'accountId': account_list,
