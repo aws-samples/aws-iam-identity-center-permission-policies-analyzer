@@ -54,6 +54,13 @@ def query_ddb_to_populate_report(user_name, principal_id, group_name, principal_
             # Excel has a 32,767 char limit, check if each policy exceeds the limit
             policy_type_list = ['inlinePolicies', 'customerPolicies','managedPolicies' ]
             for policy_type in policy_type_list:
+                # return policy arn for AWS managed policies
+                managed_policy_arn_list = []
+                if policy_type == 'managedPolicies':
+                    for policy in permission[policy_type]:
+                        managed_policy_arn_list.append(policy['policryArn'])
+                    permission[policy_type] = managed_policy_arn_list
+                            
                 if len(str(permission[policy_type])) > 32700:
                     permission[policy_type] = 'Exceed character limit for excel, refer to AWS Console for full policy details'
                 

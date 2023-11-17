@@ -42,7 +42,7 @@ def handler(event, context):
     
     print("number of permission sets to be analysed:", len(permission_sets_list))
     # loop through permission set to get list of group ID (to get sso group and users), policies, default versions (for json details)
-    for permission_set_arn in permission_sets_response.get('PermissionSets'):
+    for permission_set_arn in permission_sets_list:
         print("currently analysing PermissionSet:", permission_set_arn)
         # get list of accounts associated with permission set
         assoc_acc_response = sso.list_accounts_for_provisioned_permission_set(
