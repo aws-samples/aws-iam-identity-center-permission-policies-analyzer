@@ -66,9 +66,9 @@ def query_ddb_to_populate_report(user_name, principal_id, group_name, principal_
                 
             # Loop through all assignments of a permission set for individual users and groups
             for no_of_assignments, accountid in enumerate(permission['accountId']):
-                # Additional principal type check to prevent duplicated records (a user can be assigned individually or assigned as part of a group)
-                if principal_type == permission['principalType'][no_of_assignments]:
-                    writer.writerow([user_name, principal_id, permission['principalType'][no_of_assignments], group_name, permission['accountId'][no_of_assignments], permission['permissionSetArn'], permission['permissionSetName'], permission['inlinePolicies'], permission['customerPolicies'], permission['managedPolicies'], permission['permissionsBoundary']])
+                # Additional principal id check to prevent duplicated records (a user can be assigned individually or assigned as part of a group) and incorrect records (permission set filter will have other principals included)
+                if principal_id == permission['principalId'][no_of_assignments]:
+                    writer.writerow([user_name, principal_id, permission['principalType'][no_of_assignments], group_name, accountid, permission['permissionSetArn'], permission['permissionSetName'], permission['inlinePolicies'], permission['customerPolicies'], permission['managedPolicies'], permission['permissionsBoundary']])
                     
             
                     

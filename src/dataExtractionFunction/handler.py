@@ -93,7 +93,7 @@ def handler(event, context):
                     )
                 # Store paginated results into a list
                 for principal_assignee in account_assignments_response.get('AccountAssignments'):
-                    identity_principal_assignee_list.append(account)
+                    identity_principal_assignee_list.append(principal_assignee)
 
             for principal_assignee in identity_principal_assignee_list:
                 # build json
@@ -189,8 +189,24 @@ def handler(event, context):
                 'UserId': user['UserId']
             }
         )
+        
+        group_membership_list = user_group_membership_response.get('GroupMemberships')
+    
+        # if total number of group exceed the size of one page
+        while 'NextToken' in user_group_membership_response:
+            user_group_membership_response = identitystore.list_group_memberships_for_member(
+                IdentityStoreId=IDENTITY_STORE_ID,
+                MemberId={
+                    'UserId': user['UserId']
+                },
+                NextToken=user_group_membership_response['NextToken']
+            )
+            # Store paginated results into a list
+            for group_membership in user_group_membership_response.get('GroupMemberships'):
+                group_membership_list.append(group_membership)
+        
         group_name_list=[]
-        for group in user_group_membership_response['GroupMemberships']:
+        for group in group_membership_list:
             group_description_response = identitystore.describe_group(
                 IdentityStoreId=IDENTITY_STORE_ID,
                 GroupId=group['GroupId']
@@ -203,7 +219,7 @@ def handler(event, context):
             Item={
                 'userId': user['UserId'],
                 'userName': user['UserName'],
-                'groupMemberships': user_group_membership_response['GroupMemberships'],
+                'groupMemberships': group_membership_list,
                 'groupName': group_name_list
             })
     
