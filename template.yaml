@@ -112,8 +112,6 @@ Resources:
                 - identitystore:GetGroupId
                 - identitystore:GetUserId
               Resource: '*'
-      Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:770693421928:layer:Klayers-p310-boto3:10
   dataExtractionFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
